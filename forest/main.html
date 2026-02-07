@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>ЛЕС — Мрачное Приключение</title>
+<style>
+html,body{margin:0;width:100%;height:100%;background:black;overflow:hidden;font-family:Georgia,serif;}
+#game{display:block;position:absolute;inset:0;overflow:hidden;}
+#background{position:absolute;inset:0;background:url("./forest_bg.jpg") center/cover no-repeat;background-size:cover;filter:blur(10px) brightness(0.8);opacity:1;transition:filter 1s, opacity 1s;z-index:0;}
+#dark{position:absolute;inset:0;background:rgba(0,0,0,0.5);opacity:1;z-index:1;transition:background 1s;}
+#dialog{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:520px;padding:24px;background:rgba(10,10,10,0.9);border-radius:18px;color:#ddd;box-shadow:0 0 40px black;z-index:5;white-space:pre-line;max-height:80vh;overflow-y:auto;border:2px solid #3a2a1a;}
+.choice{margin-top:12px;padding:12px;background:#2a2a2a;border-radius:10px;cursor:pointer;transition:transform 0.1s, background 0.3s;border-left:4px solid #5d4037;}
+.choice:hover{background:#3d3d3d;transform:translateX(5px);border-left:4px solid #a52a2a;}
+.choice:active{transform:translateX(3px);}
+.lowSanity .choice{animation:shake 0.2s infinite;}
+@keyframes shake{0%{transform:translate(0px,0px);}25%{transform:translate(2px,-1px);}50%{transform:translate(-2px,1px);}75%{transform:translate(1px,2px);}100%{transform:translate(0px,0px);}}
+.glitch{color:#ddd;animation:glitchAnim 0.3s infinite;}
+@keyframes glitchAnim{0%{text-shadow:2px 0 red;}25%{text-shadow:-2px 0 blue;}50%{text-shadow:1px 0 lime;}75%{text-shadow:-1px 0 yellow;}100%{text-shadow:2px 0 red;}}
+#mini{position:absolute;inset:0;display:none;z-index:4;pointer-events:auto;background:rgba(0,10,0,0.85);border:3px solid #2e1b0a;}
+.fragment{width:48px;position:absolute;cursor:pointer;background:url("./fragments.png") center/cover no-repeat;border-radius:50%;box-shadow:0 0 10px #ff000088;}
+.object{width:100px;height:100px;position:absolute;cursor:pointer;background:url("./forest_objects.png") center/cover no-repeat;border-radius:8px;box-shadow:0 0 20px #4da6ff;}
+#stats{position:absolute;top:10px;left:10px;color:#ddd;font-size:16px;z-index:5;background:rgba(20,15,10,0.85);padding:8px 12px;border-radius:12px;width:220px;border:2px solid #3a2a1a;}
+.stat-bar{height:10px;background:#333;border-radius:6px;margin-top:4px;overflow:hidden;border:1px solid #111;}
+.stat-fill{height:100%;border-radius:6px;width:100%;transition:width 0.5s, background 0.5s;}
+#mini-display{position:absolute;top:20px;left:50%;transform:translateX(-50%);background:rgba(30,20,10,0.95);color:white;padding:15px 25px;border-radius:12px;z-index:10;text-align:center;font-size:18px;border:2px solid #5d4037;box-shadow:0 0 15px rgba(0,0,0,0.8);min-width:300px;font-weight:bold;}
+#timer{font-weight:bold;font-size:28px;color:#ffcc00;margin-top:8px;text-shadow:0 0 5px #ff9900;}
+#goal-text{font-weight:bold;margin-bottom:8px;color:#d4af37;font-size:22px;text-shadow:0 0 3px #aa8800;}
+.restart-btn{position:absolute;top:20px;right:20px;background:#8b0000;color:white;padding:10px 20px;border-radius:8px;cursor:pointer;z-index:10;border:2px solid #5d0000;box-shadow:0 0 10px #ff0000;font-weight:bold;}
+.restart-btn:hover{background:#a50000;transform:scale(1.05);}
+.ending-screen{position:absolute;inset:0;background:rgba(0,0,0,0.9);color:white;display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:20;text-align:center;padding:20px;}
+.ending-title{font-size:48px;margin-bottom:30px;text-shadow:0 0 15px #ff0000;font-family:'Times New Roman',serif;}
+.ending-text{font-size:24px;line-height:1.5;max-width:800px;margin-bottom:40px;font-style:italic;}
+.end-choices{display:flex;flex-direction:column;align-items:center;}
+</style>
+</head>
+<body>
+<div id="game">
+  <div id="background"></div>
+  <div id="dark"></div>
+  <div id="mini">
+    <div id="mini-display">
+      <div id="goal-text">Цель: Собери 3 осколка</div>
+      <div id="timer">30</div>
+    </div>
+  </div>
+  <div id="dialog"></div>
+  <div id="stats">
+    <div>Рассудок: <span id="sanity">100</span>/100</div>
+    <div class="stat-bar"><div id="sanity-bar" class="stat-fill" style="background:green;width:100%"></div></div>
+    <div>Тьма: <span id="darkness">0</span>/100</div>
+    <div class="stat-bar"><div id="darkness-bar" class="stat-fill" style="background:purple;width:0%"></div></div>
+  </div>
+  <button class="restart-btn" onclick="restartGame()">Начать заново</button>
+</div>
+<audio id="a1" src="./forest_ambient1.mp3" loop></audio>
+<script>
+let S = {
+  sanity: 100,
+  darkness: 0,
+  forestPower: 0,
+  step: 0,
+  gameOver: false,
+  storyPool: []
+};
+
+const a1 = document.getElementById("a1");
+const a2 = document.getElementById("a2");
+let currentAmbient = 1;
+
+const dialog = document.getElementById("dialog");
+const mini = document.getElementById("mini");
+const bg = document.getElementById("background");
+const dark = document.getElementById("dark");
+const sanitySpan = document.getElementById("sanity");
+const darkSpan = document.getElementById("darkness");
+const sanityBar = document.getElementById("sanity-bar");
+const darkBar = document.getElementById("darkness-bar");
+const timerElement = document.getElementById("timer");
+const goalTextElement = document.getElementById("goal-text");
+
+let miniGameActive = false;
+let timerInterval = null;
+
+function initAudio() {
+  a1.volume = 0.7;
+  a2.volume = 0.7;
+  
+  a1.play().catch(e => {
+    document.addEventListener('click', unlockAudio, {once: true});
+  });
+  
+  a2.volume = 0;
+  a2.play().catch(e => console.log("Ошибка воспроизведения аудио 2:", e));
+}
+
+function unlockAudio() {
+  a1.play().catch(e => console.log("Не удалось разблокировать аудио:", e));
+  a2.play().catch(e => console.log("Не удалось разблокировать аудио 2:", e));
+}
+
+function updateStats() {
+  sanitySpan.textContent = Math.floor(S.sanity);
+  darkSpan.textContent = Math.floor(S.darkness);
+  
+  sanityBar.style.width = S.sanity + "%";
+  sanityBar.style.background = S.sanity > 60 ? "green" : S.sanity > 30 ? "#ffcc00" : "#ff3333";
+  
+  darkBar.style.width = Math.min(S.darkness, 100) + "%";
+  darkBar.style.background = S.darkness > 70 ? "#8a2be2" : S.darkness > 40 ? "#9932cc" : "#800080";
+  
+  updateVisual();
+  updateAudio();
+}
+
+function updateVisual() {
+  const blurAmount = (100 - S.sanity) / 20;
+  const brightnessAmount = 0.5 + S.sanity / 200;
+  bg.style.filter = `blur(${blurAmount}px) brightness(${brightnessAmount})`;
+  
+  const darkOpacity = 0.3 + S.darkness / 120;
+  dark.style.background = `rgba(0,0,0,${darkOpacity})`;
+}
+
+function glitchText() {
+  if (S.sanity < 40) {
+    dialog.classList.add("glitch");
+    document.body.classList.add("lowSanity");
+  } else {
+    dialog.classList.remove("glitch");
+    document.body.classList.remove("lowSanity");
+  }
+}
+
+setInterval(() => {
+  if (!miniGameActive && !S.gameOver) {
+    S.darkness = Math.min(100, S.darkness + 0.3);
+    S.sanity = Math.max(0, S.sanity - 0.7);
+    
+    updateStats();
+    glitchText();
+    
+    checkStateEndings();
+  }
+}, 10000);
+
+function updateAudio() {
+  if (S.darkness > 65 && currentAmbient !== 2) {
+    a1.volume = 0;
+    a2.volume = 0.7;
+    currentAmbient = 2;
+  } else if (S.darkness <= 50 && currentAmbient !== 1) {
+    a2.volume = 0;
+    a1.volume = 0.7;
+    currentAmbient = 1;
+  }
+}
+
+function checkStateEndings() {
+  if (S.gameOver) return;
+  
+  if (S.sanity <= 0) {
+    showEnding("madness");
+    return true;
+  }
+  
+  if (S.darkness >= 100) {
+    showEnding("darkness");
+    return true;
+  }
+  
+  return false;
+}
+
+function startMiniGame(goalText, timeLimit = 30) {
+  miniGameActive = true;
+  dialog.style.display = "none"; 
+  mini.style.display = "block";
+  
+  goalTextElement.textContent = goalText;
+  timerElement.textContent = timeLimit;
+  timerElement.style.color = "#ffcc00";
+  timerElement.style.textShadow = "0 0 5px #ff9900";
+  
+  while (mini.childElementCount > 1) {
+    mini.removeChild(mini.firstChild);
+  }
+  
+  return { timeLeft: timeLimit };
+}
+
+function setupTimer(timeLeft, onTimeout, onSuccess, nextStep) {
+  if (timerInterval) clearInterval(timerInterval);
+  
+  timerInterval = setInterval(() => {
+    timeLeft--;
+    timerElement.textContent = timeLeft;
+    
+    if (timeLeft <= 5) {
+      timerElement.style.color = "#ff3333";
+      timerElement.style.textShadow = "0 0 10px #ff0000";
+    }
+    
+    if (timeLeft <= 0) {
+      clearInterval(timerInterval);
+      onTimeout();
+      endMiniGame(nextStep);
+    }
+  }, 1000);
+  
+  return timerInterval;
+}
+
+function endMiniGame(nextStep) {
+  miniGameActive = false;
+  mini.style.display = "none";
+  
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  
+  if (!checkStateEndings() && nextStep) {
+    S.step++;
+    if (S.step >= 10) {
+      determineFinalPath();
+    } else {
+      showRandomBranch();
+    }
+  }
+}
+
+function miniFragments(nextStep) {
+  const { timeLeft } = startMiniGame("Цель: Собери 3 осколка");
+  let collected = 0;
+  
+  for (let i = 0; i < 8; i++) {
+    const f = document.createElement("div");
+    f.className = "fragment";
+    f.style.left = (Math.random() * 85 + 5) + "%";
+    f.style.top = (Math.random() * 85 + 5) + "%";
+    
+    f.onclick = () => {
+      if (collected >= 3) return;
+      
+      f.style.transform = "scale(1.5)";
+      f.style.opacity = "0";
+      setTimeout(() => {
+        if (f.parentNode) f.parentNode.removeChild(f);
+      }, 300);
+      
+      collected++;
+      
+      if (Math.random() < 0.35) {
+        S.sanity = Math.max(0, S.sanity - 8);
+        S.darkness = Math.min(100, S.darkness + 12);
+        S.forestPower = Math.min(100, S.forestPower + 5);
+        updateStats();
+      }
+      
+      if (collected >= 3) {
+        clearInterval(timerInterval);
+        
+        S.sanity = Math.min(100, S.sanity + 10);
+        S.forestPower = Math.min(100, S.forestPower + 3);
+        
+        updateStats();
+        glitchText();
+        
+        showMiniMessage("ОСКОЛКИ СОБРАНЫ!", "#00cc00", "#00ff00", nextStep);
+      }
+    };
+    
+    mini.appendChild(f);
+  }
+  
+  setupTimer(timeLeft, 
+    () => {
+      S.sanity = Math.max(0, S.sanity - 12);
+      S.darkness = Math.min(100, S.darkness + 18);
+      S.forestPower = Math.min(100, S.forestPower + 8);
+      updateStats();
+      showMiniMessage("ВРЕМЯ ВЫШЛО!", "#ff3333", "#ff0000");
+    },
+    null,
+    nextStep
+  );
+}
+
+function miniObject(nextStep) {
+  const { timeLeft } = startMiniGame("Цель: Найди таинственный предмет");
+  
+  const o = document.createElement("div");
+  o.className = "object";
+  o.style.left = (Math.random() * 75 + 10) + "%";
+  o.style.top = (Math.random() * 75 + 10) + "%";
+  
+  o.onclick = () => {
+    clearInterval(timerInterval);
+    
+    S.secrets = (S.secrets || 0) + 1;
+    S.sanity = Math.min(100, S.sanity + 15);
+    S.darkness = Math.max(0, S.darkness - 8);
+    S.forestPower = Math.min(100, S.forestPower + 10);
+    
+    updateStats();
+    glitchText();
+    
+    showMiniMessage("ТАИНСТВЕННЫЙ ПРЕДМЕТ НАЙДЕН!", "#9999ff", "#6666ff", nextStep);
+  };
+  
+  mini.appendChild(o);
+  
+  setupTimer(timeLeft,
+    () => {
+      S.sanity = Math.max(0, S.sanity - 7);
+      S.darkness = Math.min(100, S.darkness + 10);
+      S.forestPower = Math.min(100, S.forestPower + 5);
+      updateStats();
+      showMiniMessage("ВЫ НЕ НАШЛИ ПРЕДМЕТ...", "#ff6666", "#ff3333");
+    },
+    null,
+    nextStep
+  );
+}
+
+function showMiniMessage(text, bgColor, borderColor, nextStep) {
+  const msg = document.createElement("div");
+  msg.style.cssText = `
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: ${bgColor}22;
+    color: white;
+    padding: 25px 40px;
+    border-radius: 15px;
+    text-align: center;
+    font-size: 28px;
+    font-weight: bold;
+    z-index: 20;
+    border: 3px solid ${borderColor};
+    box-shadow: 0 0 25px ${borderColor};
+    text-shadow: 0 0 5px ${borderColor};
+    min-width: 350px;
+  `;
+  msg.textContent = text;
+  mini.appendChild(msg);
+  
+  setTimeout(() => {
+    if (mini.contains(msg)) mini.removeChild(msg);
+    if (nextStep !== undefined) endMiniGame(nextStep);
+  }, 1800);
+}
+
+function initStoryPool() {
+  S.storyPool = [
+    {
+      text: "Ты входишь в лес. Деревья шепчут что-то на непонятном языке. Воздух становится холоднее с каждым шагом.",
+      choices: [
+        { text: "Послушать внимательнее", effects: { sanity: -8, darkness: +5, forestPower: +12 }, type: "continue" },
+        { text: "Закрыть уши и идти дальше", effects: { sanity: +3, darkness: +2, forestPower: -3 }, type: "continue" },
+        { text: "Осмотреться вокруг", type: "mini", miniType: "fragments" }
+      ]
+    },
+    {
+      text: "Тропинка раздваивается. Слева слышен журчание воды, справа — странный шёпот. Туман сгущается вокруг тебя.",
+      choices: [
+        { text: "Пойти к воде", effects: { sanity: +5, darkness: -5, forestPower: -2 }, type: "continue" },
+        { text: "Последовать за шёпотом", effects: { sanity: -10, darkness: +15, forestPower: +15 }, type: "continue" },
+        { text: "Исследовать туман", type: "mini", miniType: "object" }
+      ]
+    },
+    {
+      text: "Ты находишь старую хижину, почти полностью поглощённую деревьями. Дверь скрипит на ветру, приглашая войти.",
+      choices: [
+        { text: "Войти в хижину", effects: { sanity: -15, darkness: +20, forestPower: +25 }, type: "continue" },
+        { text: "Обойти хижину", effects: { sanity: +5, darkness: +3, forestPower: -5 }, type: "continue" },
+        { text: "Осмотреть окна", type: "mini", miniType: "fragments" }
+      ]
+    },
+    {
+      text: "На земле ты замечаешь странные символы, нарисованные кровью или красной глиной. Они пульсируют в такт твоему сердцу.",
+      choices: [
+        { text: "Потрогать символы", effects: { sanity: -20, darkness: +25, forestPower: +30 }, type: "continue" },
+        { text: "Стереть символы ногой", effects: { sanity: +10, darkness: -10, forestPower: -15 }, type: "continue" },
+        { text: "Сфотографировать символы", type: "mini", miniType: "object" }
+      ]
+    },
+    {
+      text: "Впереди виднеется поляна, освещённая лунным светом. В центре стоит одинокий дуб с лицом, вырезанным на стволе.",
+      choices: [
+        { text: "Подойти к дубу", effects: { sanity: -12, darkness: +10, forestPower: +20 }, type: "continue" },
+        { text: "Обойти поляну", effects: { sanity: +8, darkness: -5, forestPower: -8 }, type: "continue" },
+        { text: "Исследовать края поляны", type: "mini", miniType: "fragments" }
+      ]
+    },
+    {
+      text: "Ты слышишь детский смех где-то впереди. Но в этом лесу не должно быть детей. Смех то приближается, то отдаляется.",
+      choices: [
+        { text: "Последовать за смехом", effects: { sanity: -18, darkness: +22, forestPower: +25 }, type: "continue" },
+        { text: "Затаиться и ждать", effects: { sanity: -5, darkness: +8, forestPower: +5 }, type: "continue" },
+        { text: "Крикнуть в ответ", type: "mini", miniType: "object" }
+      ]
+    },
+    {
+      text: "Туман становится настолько густым, что ты едва видишь собственные руки. Воздух пахнет гнилью и чем-то сладким.",
+      choices: [
+        { text: "Продолжать идти вперёд", effects: { sanity: -10, darkness: +15, forestPower: +10 }, type: "continue" },
+        { text: "Сесть и ждать рассвета", effects: { sanity: +15, darkness: -10, forestPower: -10 }, type: "continue" },
+        { text: "Разжечь костёр", type: "mini", miniType: "fragments" }
+      ]
+    },
+    {
+      text: "Ты находишь ручей с чёрной водой. В нём плавают странные предметы: куклы, часы, обрывки фотографий.",
+      choices: [
+        { text: "Напиться воды", effects: { sanity: -25, darkness: +30, forestPower: +35 }, type: "continue" },
+        { text: "Перейти ручей вброд", effects: { sanity: -8, darkness: +12, forestPower: +8 }, type: "continue" },
+        { text: "Исследовать предметы в воде", type: "mini", miniType: "object" }
+      ]
+    },
+    {
+      text: "Впереди слышен звук цепей и скрежет металла. Кто-то или что-то тащится по лесу, оставляя за собой борозду на земле.",
+      choices: [
+        { text: "Спрятаться и наблюдать", effects: { sanity: -5, darkness: +10, forestPower: +5 }, type: "continue" },
+        { text: "Пойти на звук", effects: { sanity: -20, darkness: +25, forestPower: +20 }, type: "continue" },
+        { text: "Залезть на дерево", type: "mini", miniType: "fragments" }
+      ]
+    },
+    {
+      text: "Ты натыкаешься на круг из грибов. Воздух внутри круга мерцает, как над раскалённой землёй. Слышны голоса из другого мира.",
+      choices: [
+        { text: "Войти в круг", effects: { sanity: -30, darkness: +35, forestPower: +40 }, type: "continue" },
+        { text: "Обойти круг", effects: { sanity: +5, darkness: -5, forestPower: -10 }, type: "continue" },
+        { text: "Сорвать грибы", type: "mini", miniType: "object" }
+      ]
+    },
+    {
+      text: "На дереве ты видишь надпись, сделанную свежей кровью: 'ПОВЕРНУТЬ НАЗАД'. Буквы ещё сочатся, хотя вокруг ни души.",
+      choices: [
+        { text: "Игнорировать предупреждение", effects: { sanity: -10, darkness: +15, forestPower: +15 }, type: "continue" },
+        { text: "Повернуть назад", effects: { sanity: +20, darkness: -20, forestPower: -25 }, type: "continue" },
+        { text: "Добавить своё имя", type: "mini", miniType: "fragments" }
+      ]
+    },
+    {
+      text: "Ты находишь старый колодец. Из него доносится пение. Если прислушаться, то это твоя любимая песня из детства.",
+      choices: [
+        { text: "Заглянуть в колодец", effects: { sanity: -22, darkness: +25, forestPower: +25 }, type: "continue" },
+        { text: "Закрыть колодец крышкой", effects: { sanity: +12, darkness: -15, forestPower: -20 }, type: "continue" },
+        { text: "Бросить камень в колодец", type: "mini", miniType: "object" }
+      ]
+    },
+    {
+      text: "Впереди виднеется свет. Это может быть дом с теплом и безопасностью, или ловушка, расставленная лесом.",
+      choices: [
+        { text: "Пойти к свету", effects: { sanity: -5, darkness: +10, forestPower: +10 }, type: "continue" },
+        { text: "Обойти свет стороной", effects: { sanity: +10, darkness: -5, forestPower: -8 }, type: "continue" },
+        { text: "Подкрасться ближе", type: "mini", miniType: "fragments" }
+      ]
+    },
+    {
+      text: "Ты чувствуешь, как лес проникает в твои мысли. Твои воспоминания смешиваются с чужими. Ты уже не уверен, кто ты.",
+      choices: [
+        { text: "Сопротивляться влиянию", effects: { sanity: +15, darkness: -10, forestPower: -20 }, type: "continue" },
+        { text: "Открыться лесу", effects: { sanity: -25, darkness: +30, forestPower: +35 }, type: "continue" },
+        { text: "Вспомнить своё имя", type: "mini", miniType: "object" }
+      ]
+    },
+    {
+      text: "На земле ты видишь следы босых ног, ведущие вглубь леса. Следы свежие, и они похожи на твои собственные.",
+      choices: [
+        { text: "Следовать за следами", effects: { sanity: -15, darkness: +20, forestPower: +25 }, type: "continue" },
+        { text: "Стереть следы", effects: { sanity: +10, darkness: -15, forestPower: -20 }, type: "continue" },
+        { text: "Осмотреть следы внимательнее", type: "mini", miniType: "fragments" }
+      ]
+    }
+  ];
+}
+
+function showRandomBranch() {
+  if (S.gameOver) return;
+  
+  if (S.step === 0 && S.storyPool.length === 0) {
+    initStoryPool();
+  }
+  
+  if (S.storyPool.length === 0 && S.step < 10) {
+    determineFinalPath();
+    return;
+  }
+  
+  const randomIndex = Math.floor(Math.random() * S.storyPool.length);
+  const branch = S.storyPool[randomIndex];
+  
+  S.storyPool.splice(randomIndex, 1);
+  
+  showBranch(branch);
+}
+
+function showBranch(branch) {
+  if (S.gameOver) return;
+  
+  dialog.style.display = "block";
+  dialog.innerHTML = "";
+  
+  const p = document.createElement("p");
+  p.textContent = branch.text;
+  p.style.lineHeight = "1.6";
+  p.style.fontSize = "18px";
+  dialog.appendChild(p);
+  
+  if (branch.choices) {
+    branch.choices.forEach(choice => {
+      const d = document.createElement("div");
+      d.className = "choice";
+      d.textContent = choice.text;
+      
+      d.onclick = () => {
+        if (choice.effects) {
+          applyEffects(choice.effects);
+        }
+        
+        if (choice.type === "mini") {
+          if (choice.miniType === "fragments") {
+            miniFragments();
+          } else if (choice.miniType === "object") {
+            miniObject();
+          }
+        } else if (choice.type === "continue") {
+          S.step++;
+          
+          if (!checkStateEndings()) {
+            if (S.step >= 10) {
+              determineFinalPath();
+            } else {
+              showRandomBranch();
+            }
+          }
+        }
+      };
+      
+      dialog.appendChild(d);
+    });
+  }
+  
+  dialog.scrollTop = dialog.scrollHeight;
+  
+  glitchText();
+}
+
+function applyEffects(effects) {
+  if (effects.sanity !== undefined) {
+    S.sanity = Math.max(0, Math.min(100, S.sanity + effects.sanity));
+  }
+  
+  if (effects.darkness !== undefined) {
+    S.darkness = Math.max(0, Math.min(100, S.darkness + effects.darkness));
+  }
+  
+  if (effects.forestPower !== undefined) {
+    S.forestPower = Math.max(0, Math.min(100, S.forestPower + effects.forestPower));
+  }
+  
+  updateStats();
+  glitchText();
+}
+
+function determineFinalPath() {
+  if (S.sanity > 80 && S.darkness < 20 && S.forestPower < 20) {
+    showEnding("secret");
+  } else if (S.darkness > 65) {
+    showEnding("darkness_rut");
+  } else if (S.sanity < 35) {
+    showEnding("madness_rut");
+  } else if (S.forestPower > 65) {
+    showEnding("forest_rut");
+  } else {
+    const badEndings = ["darkness_rut", "madness_rut", "forest_rut"];
+    const randomEnding = badEndings[Math.floor(Math.random() * badEndings.length)];
+    showEnding(randomEnding);
+  }
+}
+
+function showEnding(type) {
+  S.gameOver = true;
+  
+  a1.pause();
+  a2.pause();
+  
+  const endings = {
+    madness: [
+      "Твой рассудок не выдержал. Ты падаешь на колени, и лес поглощает тебя...",
+      "Голоса в голове становятся громче. Ты больше не можешь отличить реальность от кошмара.",
+      "Ты смеёшься. Смех переходит в рыдания. Лес принимает тебя как одного из своих.",
+      "Твои глаза закатываются. Тело остаётся в лесу, а разум уходит в вечность.",
+      "КОНЕЦ: Безумие"
+    ],
+    darkness: [
+      "Тьма сгущается вокруг тебя, как живое существо. Она проникает в твою кожу, в твои мысли.",
+      "Ты перестаёшь видеть, слышать, чувствовать. Ты становишься частью тьмы.",
+      "Последнее, что ты слышишь — это шёпот леса, приветствующий новую тень.",
+      "Твоё тело растворяется в темноте. Лес поглотил ещё одну душу.",
+      "КОНЕЦ: Поглощение тьмой"
+    ],
+    darkness_rut: [
+      "Ты достигаешь сердца леса — места, где тьма материальна. Она обвивает тебя, как любовник.",
+      "Ты чувствуешь, как твоё тело меняется. Кожа становится корой, пальцы — ветвями.",
+      "Лес даёт тебе новую жизнь — вечную жизнь в темноте. Ты станешь его стражем.",
+      "Твои крики превращаются в шелест листьев. Ты больше никогда не покинешь этот лес.",
+      "КОНЕЦ: Слуга тьмы"
+    ],
+    madness_rut: [
+      "Ты находишь хижину в глубине леса. Внутри — зеркало, но в отражении не ты.",
+      "Отражение улыбается и протягивает руку. Ты чувствуешь, как твоё сознание раскалывается.",
+      "Ты вступаешь в зеркало, оставляя своё тело позади. Оно будет блуждать по лесу вечно.",
+      "Внутри зеркала нет времени, нет пространства, только бесконечные коридоры безумия.",
+      "КОНЕЦ: Вечное безумие"
+    ],
+    forest_rut: [
+      "Древний дуб на поляне зовёт тебя. Его ветви обвивают тебя, как объятия матери.",
+      "Ты чувствуешь, как корни прорастают в твою плоть. Боль сменяется экстазом единения.",
+      "Твоё сердце бьётся в унисон с сердцем леса. Ты становишься его частью — навсегда.",
+      "Люди будут приходить в этот лес и слышать твой шёпот в ветвях. Ты станешь легендой.",
+      "КОНЕЦ: Слияние с лесом"
+    ],
+    secret: [
+      "Ты находишь поляну, где светит солнце. Лес отступает перед твоей силой воли.",
+      "В центре поляны стоит камень с надписью: 'Ты прошёл испытание. Лес уважает сильных.'",
+      "Ты чувствуешь, как тьма покидает тебя. Рассудок становится ясным, как горный ручей.",
+      "Лес открывает тебе тропу домой. Ты выходишь на опушку с первыми лучами солнца.",
+      "Ты оглядываешься. Лес выглядит обычным. Но в кармане ты находишь листок с надписью: 'Мы ещё встретимся.'",
+      "КОНЕЦ: Победа над лесом (СЕКРЕТНАЯ КОНЦОВКА)"
+    ]
+  };
+  
+  const endingScreen = document.createElement("div");
+  endingScreen.className = "ending-screen";
+  endingScreen.innerHTML = `
+    <div class="ending-title">${type === "secret" ? "✨ СЕКРЕТНАЯ КОНЦОВКА ✨" : "ПЛОХАЯ КОНЦОВКА"}</div>
+    <div class="ending-text">${endings[type][0]}</div>
+    <div class="end-choices">
+      <button class="restart-btn" style="position:static;margin-top:20px;font-size:20px;padding:15px 40px;" onclick="restartGame()">
+        Начать заново
+      </button>
+    </div>
+  `;
+  
+  document.getElementById("game").appendChild(endingScreen);
+  
+  let sceneIndex = 1;
+  const sceneInterval = setInterval(() => {
+    if (sceneIndex < endings[type].length - 1 && endingScreen.querySelector(".ending-text")) {
+      endingScreen.querySelector(".ending-text").textContent = endings[type][sceneIndex];
+      sceneIndex++;
+    } else {
+      clearInterval(sceneInterval);
+      if (endingScreen.querySelector(".ending-text")) {
+        endingScreen.querySelector(".ending-text").textContent = endings[type][endings[type].length - 1];
+      }
+    }
+  }, 3000);
+}
+
+function restartGame() {
+  S = {
+    sanity: 100,
+    darkness: 0,
+    forestPower: 0,
+    step: 0,
+    gameOver: false,
+    storyPool: []
+  };
+  
+  const endingScreen = document.querySelector(".ending-screen");
+  if (endingScreen) endingScreen.remove();
+  
+  mini.style.display = "none";
+  if (timerInterval) clearInterval(timerInterval);
+  miniGameActive = false;
+  
+  a1.volume = 0.7;
+  a2.volume = 0;
+  currentAmbient = 1;
+  a1.play().catch(e => console.log("Ошибка воспроизведения:", e));
+  
+  updateStats();
+  
+  initStoryPool();
+  showRandomBranch();
+}
+
+window.addEventListener('load', () => {
+  initAudio();
+  restartGame();
+});
+</script>
+</body>
+</html>
